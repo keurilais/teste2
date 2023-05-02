@@ -1,0 +1,363 @@
+// https://github.com/douglaszuqueto/esp8266-http-request
+
+// ############# LIBRARIES ############### //
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include "DHTesp.h" // Biblioteca: DHT sensor library for ESPx
+#define IS_HTTPS TRUE
+#include <SoftwareSerial.h> 
+
+// ############# VARIABLES ############### //
+
+#define PIN_ANEMOMETRO 6
+#define PIN_DIRECAO_VENTO A0
+#define PIN_PLUVIOMETRO 9
+#define SIM800_RX_PIN 10
+#define SIM800_TX_PIN 11
+#define SIM800_RST_PIN 2
+
+// ############# PROTOTYPES ############### //
+
+void initSerial();
+void initDHT();
+void initGPRS();
+void httpRequest(String path);
+String processDirecaoVento(float valor);
+
+// ############### OBJECTS ################# //
+
+#define SENSOR_TEMPERATURA 5
+#define SENSOR_CHUVA 4
+
+// DHT dht(SENSOR_TEMPERATURA, DHT22);
+DHTesp dht;
+float h = 0.0;
+float t = 0.0;
+int chuva = 0;
+float valorDirecaoVento = 0.0;
+String status;
+
+// String equipamento = "METEOROLOGICO_BVG_01";
+
+// int umMinuto = 60*1000;
+int umMinuto = 1000;
+
+
+// Variaveis Pluviometro:
+int valorPluviometro = 0;
+int old_val = 0;
+int PLUVI_COUNT = 0;
+
+// Variáveis Anemometro
+int valorAnemometro = 0;
+const float pi = 3.14159265;     //Número de pi
+int period = 5000;               //Tempo de medida(miliseconds)
+int delaytime = 2000;            //Invervalo entre as amostras (miliseconds)
+int radius = 147;                //Raio do anemometro(mm)
+unsigned int qtdAmostras  = 0;        //Armazena o número de amostras
+unsigned int qtdAnemometro = 0;        //Contador para o sensor
+unsigned int RPM = 0;            //Rotações por minuto
+float speedwind = 0;             //Velocidade do vento (m/s)
+float windspeed = 0;             //Velocidade do vento (km/h)
+
+
+SoftwareSerial myserial(SIM800_RX_PIN, SIM800_TX_PIN); // Declaramos os pinos RX(10) y TX(11) que vamos a usar
+
+String APN = "zap.vivo.com.br";
+String URL = "https://polivalenti.com.br/ws_ifce1.php?url=https://us-central1-cidts-meteorologia-dev.cloudfunctions.net/requisicao_semb/requisicao_semb&equipamento=METEOROLOGICO_SIMULADOR_01&temperatura=30&umidade=99&chuva=0&status=ok";
+
+void addcount() { // Incrementa contador
+  qtdAnemometro++;
+}
+
+// ############## FUNCOES PRINCIPAIS ################# //
+
+void setup() {
+  initSerial();
+  Serial.begin(9600);       // Iniciamos a comunicação serie
+  myserial.begin(9600);     // Iniciamos uma segunda comunicação serie
+  delay(1000);              // Pausa de 1 segundo
+
+  dht.setup(SENSOR_TEMPERATURA, DHTesp::DHT22);
+}
+
+void initGPRS(){
+  Serial.println("Starting... AT GPRS");
+  if (myserial.available())
+  Serial.write(myserial.read());
+ 
+  myserial.println("AT");
+  delay(3000);
+ 
+  myserial.println("AT+SAPBR=3,1,\"Contype\",\"GPRS\""); // seta o modulo para gprs
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+SAPBR=3,1,\"APN\",\""+APN+"\"");//APN
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+SAPBR=1,1"); // habilita o gprs
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+SAPBR=2,1"); // checa se o IP obtido está ativo
+  delay(6000);
+  ShowSerialData();
+ 
+ 
+  myserial.println("AT+HTTPINIT"); // habilita o modo HTTP
+  delay(6000);
+  ShowSerialData();
+  
+//  myserial.println("AT+HTTPSSL=1"); // se SSL, use este comando (opcional)
+//  delay(6000);
+//  ShowSerialData();
+ 
+  myserial.println("AT+HTTPPARA=\"CID\",1"); // seta o http bearer profile
+  delay(6000);
+  ShowSerialData();
+ 
+//  String sendtoserver = "";
+  delay(4000);
+ 
+//  myserial.println("AT+HTTPPARA=\"URL\",\"http://miliohm.com/miliohmSIM800L.php\""); //Server address
+  myserial.println("AT+HTTPPARA=\"URL\",\""+URL+"\""); // URL do site
+  delay(4000);
+  ShowSerialData();
+ 
+  myserial.println("AT+HTTPPARA=\"CONTENT\",\"text/plain\"");
+  delay(4000);
+  ShowSerialData();
+ 
+ 
+//  myserial.println("AT+HTTPDATA=" + String(sendtoserver.length()) + ",100000");
+//  Serial.println(sendtoserver);
+//  delay(6000);
+//  ShowSerialData();
+ 
+//  myserial.println(sendtoserver);
+//  delay(6000);
+//  ShowSerialData();
+ 
+  myserial.println("AT+HTTPACTION=1"); // inicia a requisicao http GET
+  delay(6000);
+  ShowSerialData();
+
+  Serial.println("....................................................\n");
+  myserial.println("AT+HTTPREAD"); // ler o conteudo da pagina
+  delay(6000);
+  ShowSerialData();
+//  String data = myserial.readString();
+//  int len = data.length();
+//  data.remove(0, 17);
+//  Serial.println(len);
+//  data.remove(len - 23, 22);
+//  Serial.println(len);
+//  Serial.println(data);
+  Serial.println("..................completed......................................");
+ 
+  myserial.println("AT+HTTPTERM"); // encerra a secao
+  delay(10000);
+  ShowSerialData();
+ 
+  /********************GSM Communication Stops********************/
+ 
+
+}
+
+void ShowSerialData()
+{
+  while (myserial.available() != 0)
+    Serial.write(myserial.read());
+  delay(1000);
+}
+
+void loop() {
+  Serial.println("Iniciando leitura...");
+  // delay(dht.getMinimumSamplingPeriod());
+  delay(10*umMinuto);
+
+  if(digitalRead(SENSOR_CHUVA) == LOW){
+    chuva = 1;
+  } else {
+    chuva = 0;
+  }
+  
+  h = dht.getHumidity();
+  t = dht.getTemperature();
+  // h = dht.readHumidity();
+  // t = dht.readTemperature();
+  Serial.print("temperatura: ");
+  Serial.println(t);
+  Serial.print("umidade: ");
+  Serial.println(h);
+
+  valorDirecaoVento = analogRead(PIN_DIRECAO_VENTO) * (5.0 / 1023.0); // Calcula a tensao
+  // Serial.print("direcao do vento: ");
+  // Serial.println(valorDirecaoVento);
+  String bodyDirecaoVento = processDirecaoVento(valorDirecaoVento);
+  // Serial.println(bodyDirecaoVento);
+
+  valorPluviometro = digitalRead(PIN_PLUVIOMETRO);
+  // Serial.print("pluviometro: ");
+  // Serial.println(valorPluviometro);
+  String bodyPluviometro = processPluviometro(valorPluviometro);
+  // Serial.println(bodyPluviometro);
+
+  valorAnemometro = analogRead(PIN_ANEMOMETRO) * (5.0 / 1023.0); // Calcula a tensao  
+  String bodyAnemometro = processAnemometro(valorAnemometro);
+  // Serial.print("anemometro: ");
+  // Serial.println(bodyAnemometro);
+
+  status = "error";
+
+  if ( isnan(t) || isnan(h) ) {
+    Serial.println("Erro ao ler os dados do DHT!");
+    h = 0;
+    t = 0;
+    // return;
+  } else {
+    status = "ok";
+    // Serial.print(dht.getStatusString());
+    Serial.print("| Temperatura: ");
+    Serial.print(t, 1);
+    Serial.print(" | Umidade: ");
+    Serial.print(h, 1);
+  }
+  
+  Serial.print(" | Chuva: ");
+  Serial.println(chuva, 1);
+
+  Serial.println("");
+  delay(1000);
+} 
+
+
+// ############## FUNCOES INIT ################# //
+
+void initSerial() {
+  Serial.begin(115200);
+}
+
+void initDHTP(){
+  // dht.setup(16, DHTesp::DHT22);
+}
+
+void initWeather() {
+  // Direcao do Vento
+  // analogReference(DEFAULT);
+
+  // Anemometro
+  pinMode(PIN_ANEMOMETRO, INPUT);
+  digitalWrite(PIN_ANEMOMETRO, HIGH);
+
+  // Pluviometro
+  pinMode(PIN_PLUVIOMETRO, INPUT_PULLUP);
+}
+
+String processDirecaoVento(float valor) {
+  int winddir = 0;
+  String winddesc = "";
+  
+  if (valor <= 2.90) { // Indica a posição norte
+    winddir = 0;
+    winddesc = "Norte";
+  } else if (valor <= 3.05) { // Indica a posição noroeste
+    winddir = 315;
+    winddesc = "Noroeste";
+  } else if (valor <= 3.25) { // Indica a posição oeste
+    winddir = 270;
+    winddesc = "Oeste";
+  } else if (valor <= 3.45) { // Indica a posição sudoeste
+    winddir = 225;
+    winddesc = "Sudoeste";
+  } else if (valor <= 3.75) { // Indica a posição sul
+    winddir = 180;
+    winddesc = "Sul";
+  } else if (valor <= 4.00) { // Indica a posição sudeste
+    winddir = 135;
+    winddesc = "Sudeste";
+  } else if (valor <= 4.25) { // Indica a posição leste
+    winddir = 90;
+    winddesc = "Leste";
+  } else if (valor <= 4.65) { // Indica a posição nordeste
+    winddir = 45;
+    winddesc = "Nordeste";
+  } else { // Caso nenhum valor seja compatível, imprime FAIL
+    winddir = 000;
+    winddesc = "FAIL";
+  }
+ 
+  Serial.println("Angulo: " + String(winddir) + " Graus ["+ winddesc + "]");
+
+  return "winddir="+String(winddir)+"&winddesc="+winddesc;
+}
+
+String processPluviometro(int val) {
+  if ((val == LOW) && (old_val == HIGH)) {   // Verefica se o Status mudou
+    delay(10);                   // Atraso colocado para lidar com qualquer "salto" no switch.
+    PLUVI_COUNT = PLUVI_COUNT + 1;   // Adiciona 1 à cntagem de pulsos
+    old_val = val;              //Iguala o valor antigo com o atual
+  
+    float pl_qtd = PLUVI_COUNT; // numero de pulsos
+    float pl_mm = PLUVI_COUNT * 0.25; // valor em milimetros
+
+    return "pl_qtd="+String(pl_qtd)+"&pl_mm="+String(pl_mm);
+
+  } else {
+    old_val = val;              //If the status hasn't changed then do nothing
+  }
+
+  return "pl_qtd="+String(0)+"&pl_mm="+String(0);
+}
+
+String processAnemometro(int valor) {
+  qtdAmostras++;
+  Serial.print(qtdAmostras);
+  Serial.print(": Inicia Leitura ANEMOMETRO...");
+  // windvelocity();
+  Serial.println("   Finalizado.");
+  // Serial.print("Contador: ");
+  // Serial.print(qtdAnemometro);
+  
+  // RPMcalc();
+
+  // WindSpeed(); // //print m/s
+  // Serial.print(windspeed);
+  // Serial.print(" [m/s] ");
+
+  // SpeedWind(); // //print km/h
+  
+  // delay(delaytime);
+
+  speedwind = 0.926*valor;
+  speedwind = (int)(speedwind*3.6);
+
+  return "speedwind="+String(speedwind) + "&rpm="+String(RPM);
+}
+
+// ############## FUNCOES AUXILIARES - ANEMOMETRO ################# //
+
+void windvelocity() { // medir velocidade do vento
+  speedwind = 0;
+  windspeed = 0;
+
+  qtdAnemometro = 0;
+  attachInterrupt(PIN_ANEMOMETRO, addcount, RISING);
+  unsigned long millis();
+  long startTime = millis();
+  while (millis() < startTime + period) {}
+}
+
+void RPMcalc() { // calcular o RPM
+  RPM = ((qtdAnemometro) * 60) / (period / 1000); // Calculate revolutions per minute (RPM)
+}
+
+void WindSpeed() { // Velocidade do vento em m/s
+  windspeed = ((4 * pi * radius * RPM) / 60) / 1000;
+} 
+
+void SpeedWind() { // //Velocidade do vento em km/h
+  speedwind = (((4 * pi * radius * RPM) / 60) / 1000) * 3.6;
+} 
