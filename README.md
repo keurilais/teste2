@@ -1,0 +1,70 @@
+#include <SPI.h>
+#include <SD.h>
+
+File myFile;
+
+// change this to match your SD shield or module;
+const int chipSelect = 10;
+
+void setup() {
+  // Open serial communications and wait for port to open:
+  Serial.begin(115200);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for Leonardo only
+  }
+
+
+  Serial.print("Initializing SD card...");
+
+  if (!SD.begin()) {
+    Serial.println("initialization failed!");
+    return;
+  }
+  Serial.println("initialization done.");
+
+  String filename = "test.txt";
+  saveContentFile(filename, "testing 1, 2, 3.");
+  readContentFile(filename);
+}
+
+void loop()
+{
+  // nothing happens after setup
+}
+
+void saveContentFile(String filename, String text) { 
+  // open the file. note that only one file can be open at a time,
+  // so you have to close this one before opening another.
+  myFile = SD.open(filename, FILE_WRITE);
+
+  // if the file opened okay, write to it:
+  if (myFile) {
+    Serial.print("Escrevendo no arquivo: "+ filename +"...");
+    myFile.println(text);
+    // close the file:
+    myFile.close();
+    Serial.println("OK!");
+  } else {
+    // if the file didn't open, print an error:
+    Serial.println("Erro ao abrir o arquivo: " + filename);
+  }
+}
+
+void readContentFile(String filename) {
+  // re-open the file for reading:
+  myFile = SD.open(filename);
+  if (myFile) {
+    Serial.println("Lendo do arquivo: "+ filename +"...");
+
+    // read from the file until there's nothing else in it:
+    while (myFile.available()) {
+      Serial.write(myFile.read());
+    }
+    // close the file:
+    myFile.close();
+  } else {
+    // if the file didn't open, print an error:
+    Serial.println("Erro ao abrir o arquivo: " + filename);
+  }
+}
+
