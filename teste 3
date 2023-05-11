@@ -1,0 +1,107 @@
+#include <SPI.h>
+#include <SoftwareSerial.h>
+
+
+#define SIM800_RX_PIN 10
+#define SIM800_TX_PIN 11
+#define SIM800_RST_PIN 2
+
+SoftwareSerial myserial(SIM800_RX_PIN, SIM800_TX_PIN); // Declaramos os pinos RX(10) y TX(11) que vamos a usar
+
+String APN = "zap.vivo.com.br";
+String URL = "http://miliohm.com/miliohmSIM800L.php";
+
+void setup() {
+ Serial.begin(9600);       // Iniciamos a comunicação serie
+  myserial.begin(9600);     // Iniciamos uma segunda comunicação serie
+  delay(1000);              // Pausa de 1 segundo
+
+  Serial.println("Starting... AT GPRS");
+
+  if (myserial.available())
+  Serial.write(myserial.read());
+ 
+  myserial.println("AT");
+  delay(3000);
+ 
+  myserial.println("AT+SAPBR=3,1,\"Contype\",\"GPRS\""); // seta o modulo para gprs
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+SAPBR=3,1,\"APN\",\""+APN+"\"");//APN
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+SAPBR=1,1"); // habilita o gprs
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+SAPBR=2,1"); // checa se o IP obtido está ativo
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+HTTPINIT"); // habilita o modo HTTP
+  delay(6000);
+  ShowSerialData();
+ 
+  myserial.println("AT+HTTPPARA=\"CID\",1"); // seta o http bearer profile
+  delay(6000);
+  ShowSerialData();
+ 
+//  String sendtoserver = "";
+  delay(4000);
+ 
+//  myserial.println("AT+HTTPPARA=\"URL\",\"http://miliohm.com/miliohmSIM800L.php\""); //Server address
+  myserial.println("AT+HTTPPARA=\"URL\",\""+URL+"\""); // URL do site
+  delay(4000);
+  ShowSerialData();
+ 
+  myserial.println("AT+HTTPPARA=\"CONTENT\",\"text/plain\"");
+  delay(4000);
+  ShowSerialData();
+ 
+  myserial.println("AT+HTTPACTION=1"); // inicia a requisicao http GET
+  delay(6000);
+  ShowSerialData();
+
+  Serial.println("....................................................\n");
+  myserial.println("AT+HTTPREAD"); // ler o conteudo da pagina
+  delay(6000);
+  ShowSerialData();
+
+  Serial.println("..................completed......................................");
+ 
+  myserial.println("AT+HTTPTERM"); // encerra a secao
+  delay(10000);
+  ShowSerialData();
+}
+
+void loop()
+{
+  // nothing happens after setup
+}
+
+void ShowSerialData()
+{
+  while (myserial.available() != 0)
+    Serial.write(myserial.read());
+  delay(1000);
+}
+
+void saveContentFile(String filename, String text) { 
+  // open the file. note that only one file can be open at a time,
+  // so you have to close this one before opening another.
+  myFile = SD.open(filename, FILE_WRITE);
+
+  // if the file opened okay, write to it:
+  if (myFile) {
+    Serial.print("Escrevendo no arquivo: "+ filename +"...");
+    myFile.println(text);
+    // close the file:
+    myFile.close();
+    Serial.println("OK!");
+  } else {
+    // if the file didn't open, print an error:
+    Serial.println("Erro ao abrir o arquivo: " + filename);
+  }
+}
